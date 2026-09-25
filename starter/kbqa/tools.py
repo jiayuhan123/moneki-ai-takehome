@@ -131,13 +131,18 @@ class DataTools:
         }
 
     def daily_metrics(self, start: str, end: str, store_id=None, product_id=None) -> dict:
-        """区间内每一天都要有一条记录，没有营业额的日期也要出现。"""
+        """按天计算净营业额、有效订单数和客单价，并补齐零数据日期。
+
+        该查询必须与 ``query_metrics`` 使用同一口径：金额包含退款；只有正金额
+        销售行的不同 order_id 才算有效订单。日期列表则由 Python 按闭区间生成，
+        这样数据库没有记录的日期仍会返回 0 和 ``aov: null``。
+        """
         where, params = self._where(start, end, store_id, product_id)
         rows = self.conn.execute(
             """
             SELECT date,
                    COALESCE(SUM(amount_cents), 0),
-                   COUNT(DISTINCT CASE WHEN is_refund=0 THEN order_id END)
+                   COUNT(DISTINCT CASE WHEN amount_cents > 0 THEN order_id END)
             FROM sales_clean WHERE %s GROUP BY date
             """
             % where,

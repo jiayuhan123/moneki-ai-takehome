@@ -72,3 +72,18 @@ def test_summary_empty_range_returns_zero_and_null_aov(tmp_path):
     assert result["orders"] == 0
     assert result["qty"] == 0
     assert result["aov"] is None
+
+
+def test_daily_uses_same_kb001_scope_and_fills_missing_days(tmp_path):
+    tools = metric_tools(tmp_path)
+
+    result = tools.daily_metrics("2026-06-18", "2026-06-20")
+
+    assert result == {
+        "days": [
+            {"date": "2026-06-18", "net_revenue": 30.0, "orders": 2, "aov": 15.0},
+            {"date": "2026-06-19", "net_revenue": 9.0, "orders": 1, "aov": 9.0},
+            # 契约要求零数据日期也出现，图表时间轴才不会断裂。
+            {"date": "2026-06-20", "net_revenue": 0.0, "orders": 0, "aov": None},
+        ]
+    }
