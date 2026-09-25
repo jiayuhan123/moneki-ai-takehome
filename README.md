@@ -1,3 +1,76 @@
+# 当前实现：第一关数据看板
+
+本分支完成了 KB-001 数据清洗、指标 API、健康与数据质量接口，以及 Vue 经营看板。第一关不依赖大模型 Key；没有配置 `LLM_API_KEY` 也能完成重建、启动和看板验收。
+
+## 3 步启动（macOS / Linux）
+
+前置环境：Python 3.12、Node.js 20+、npm、make。以下命令均在仓库根目录执行：
+
+```bash
+make setup
+make rebuild
+make run
+```
+
+打开 <http://127.0.0.1:8000>。第三步会先构建 Vue，再由 FastAPI 同端口托管页面与 `/api/*`，因此只需要一个运行进程。
+
+Windows PowerShell 开发环境可使用等价命令：
+
+```powershell
+py -3.12 -m venv starter\.venv
+starter\.venv\Scripts\python.exe -m pip install -r starter\requirements.txt
+npm --prefix frontend ci
+Set-Location starter; .\.venv\Scripts\python.exe -m kbqa.rebuild; Set-Location ..
+npm --prefix frontend run build
+Set-Location starter; .\.venv\Scripts\python.exe -m uvicorn kbqa.server:app --host 127.0.0.1 --port 8000
+```
+
+开发前端热更新时，后端保持 8000 端口运行，另开终端执行 `npm --prefix frontend run dev`，访问 <http://127.0.0.1:5173>。
+
+## 架构
+
+```mermaid
+flowchart LR
+    Browser[Vue 3 经营看板] -->|REST /api| API[FastAPI]
+    API --> Service[Service 业务层]
+    Service --> Metrics[只读 SQL 指标工具]
+    Service --> Search[BM25 文档索引]
+    Metrics --> Clean[(var/clean.db)]
+    Search --> KB[(knowledge_base)]
+    Rebuild[rebuild: KB-001 清洗] --> Clean
+    Rebuild --> Search
+    Raw[(data/pos.db)] --> Rebuild
+```
+
+- 后端使用 FastAPI + SQLite：数据量约 1.8 万行，SQLite 足以提供确定、易复核且无需额外服务的查询。
+- 前端使用 Vue 3 + TypeScript + Vite；ECharts 绘制日营业额趋势，原生表格展示 Top 10 商品。
+- 前端不写死门店和经营数字；门店、日期范围、指标与数据质量全部来自 API。更换同结构数据后执行 `make rebuild` 即可。
+- API 与前端由一个 FastAPI 端口提供；Vite 仅用于本地热更新。
+
+## 第一关口径与取舍
+
+- 日期区间为闭区间 `[start, end]`，单日查询不会漏掉结束日。
+- 净营业额为销售实收减退款；退款金额返回正数绝对值。
+- 有效订单只统计正向销售行的唯一 `order_id`；客单价为净营业额除以有效订单数。
+- 净销量为销售数量减退款数量。无交易日期在 daily 接口中补零，便于趋势图连续显示。
+- 数据清洗严格按 KB-001 v3 顺序执行；同一原始行只归入第一个失败原因，保证 `原始行 = 有效行 + 各类剔除行`。
+- Top 10 按净营业额降序；数据质量为全量重建台账，不随门店筛选变化，避免把全局清洗问题误解为门店问题。
+- 第一关未接入 DeepSeek。大模型配置和混合问答属于第三关，后续接入不会影响当前看板运行。
+
+## 验证
+
+```bash
+make test
+python3 eval/run_eval.py --base-url http://127.0.0.1:8000 --questions eval/public_questions.jsonl --only metrics --out gate1-metrics-report
+python3 eval/run_eval.py --base-url http://127.0.0.1:8000 --questions eval/public_questions.jsonl --only health --out gate1-health-report
+```
+
+当前验证结果：后端 29 个测试通过；公开题库 metrics 6/6、health 1/1。详细过程见 `DEBUG_LOG.md` 与 `EVAL_REPORT.md`。
+
+---
+
+# 原始作业说明（保留用于追溯）
+
 # Moneki.ai 全栈开发工程师（AI 产品）实习：实操作业
 
 ## 时间

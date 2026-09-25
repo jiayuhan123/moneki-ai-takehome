@@ -1,0 +1,4 @@
+# 本地 IDE、评测输出和系统文件不属于可复现源码。
+.idea/
+*-report/
+.DS_Store

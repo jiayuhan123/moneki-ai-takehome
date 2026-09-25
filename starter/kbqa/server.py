@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .service import Service
@@ -138,3 +140,12 @@ def data_quality() -> dict:
         "data_period": current.data_period,
         "kb_warnings": current.index.warnings,
     }
+
+
+# 生产/评测启动时由根目录 Makefile 先构建 Vue，再由同一个 FastAPI 进程
+# 托管静态文件。这样评审者只需运行一个服务，也不会引入跨域配置。
+# 开发阶段若 dist 尚不存在则不挂载，仍可继续用 Vite 的 5173 端口热更新；
+# API 路由在此挂载之前注册，因此 `/api/*` 不会被前端静态路由截获。
+_frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _frontend_dist.is_dir():
+    app.mount("/", StaticFiles(directory=_frontend_dist, html=True), name="dashboard")
