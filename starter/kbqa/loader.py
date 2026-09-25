@@ -6,10 +6,13 @@ import html as html_module
 import re
 from dataclasses import dataclass, field
 from datetime import date
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
 
-SUPPORTED_SUFFIXES = {".md", ".markdown"}
+# 交接文档声称支持 md/txt/html，但旧常量只允许 Markdown，导致三份编号文档
+# 永远无法进入索引。格式集合放在加载入口统一维护，索引缓存也复用它。
+SUPPORTED_SUFFIXES = {".md", ".markdown", ".txt", ".html", ".htm"}
 
 #: 文件名开头的编号就是 doc_id，与文件格式无关（契约 §0）。
 _DOC_ID = re.compile(r"^(KB-\d+)")
@@ -79,9 +82,50 @@ class Document:
 _HTML_TITLE = re.compile(r"<title>(.*?)</title>", re.S | re.I)
 
 
+class _VisibleHTML(HTMLParser):
+    """只提取用户可见正文，脚本、样式和标签不能进入检索引用。"""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self._hidden_depth = 0
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.lower() in {"script", "style"}:
+            self._hidden_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"script", "style"} and self._hidden_depth:
+            self._hidden_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self._hidden_depth and data.strip():
+            self.parts.append(data.strip())
+
+    def text(self) -> str:
+        return "\n".join(self.parts)
+
+
+def visible_html(text: str) -> str:
+    parser = _VisibleHTML()
+    parser.feed(text)
+    parser.close()
+    return parser.text()
+
+
 def decode_bytes(raw: bytes, path: Path, warnings: list[str]) -> str:
-    """统一按 UTF-8 读。个别老文件里有怪字符，忽略掉就行，不影响检索。"""
-    return raw.decode("utf-8", errors="ignore")
+    """优先 UTF-8，旧 OA 文档则回退 GB18030，并把回退写入告警。"""
+
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            text = raw.decode("gb18030")
+        except UnicodeDecodeError:
+            warnings.append("%s 无法完整解码，已替换损坏字符" % path.name)
+            return raw.decode("utf-8", errors="replace")
+        warnings.append("%s 使用 GB18030 解码" % path.name)
+        return text
 
 
 def parse_front_matter(text: str) -> tuple[dict, str]:
@@ -176,10 +220,11 @@ def load_document(path: Path) -> Optional[Document]:
     if fmt == "md":
         meta, text = parse_front_matter(text)
     elif fmt == "html":
-        # html 直接按文本入库，标签也就那么几个，BM25 自己会忽略。
+        # 标题从原始 HTML 读取；索引与 quote 使用去标签后的可见正文。
         match_title = _HTML_TITLE.search(text)
         html_title = html_module.unescape(match_title.group(1).strip()) if match_title else ""
         meta = {"title": html_title.split("-")[0].strip() or html_title}
+        text = visible_html(text)
 
     match = _DOC_ID.match(path.name)
     doc_id = str(meta.get("doc_id") or (match.group(1) if match else "")).strip()

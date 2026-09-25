@@ -11,6 +11,10 @@ def test_health_ok(client):
     body = response.json()
     assert body["status"] == "ok"
     assert body["llm_mode"] == "mock"
+    # 契约要求报告实际进入索引的 KB 文档，而不是目录文件数。
+    assert body["kb_docs"] == 35
+    assert body["valid_sales_rows"] == 18290
+    assert body["data_period"] == {"start": "2026-05-01", "end": "2026-08-31"}
 
 
 def test_metrics_summary_ok(client):
@@ -45,7 +49,24 @@ def test_retrieve_ok(client):
 def test_data_quality_ok(client):
     response = client.get("/api/data_quality")
     assert response.status_code == 200
-    assert "cleaning_report" in response.json()
+    body = response.json()
+    assert body["data_period"] == {"start": "2026-05-01", "end": "2026-08-31"}
+    assert body["cleaning_report"] == {
+        "raw_rows": 18628,
+        "removed": {
+            "1_unparseable_date": 8,
+            "2_empty_amount": 150,
+            "3_qty_le_zero": 30,
+            "4_store_not_in_stores": 10,
+            "5_product_not_in_products": 40,
+            "6_duplicate_row": 100,
+            "note_unparseable_amount": 0,
+        },
+        "kept_rows": 18290,
+        "kept_sales_rows": 18196,
+        "kept_refund_rows": 94,
+    }
+    assert body["removed_total"] == 338
 
 
 @pytest.mark.parametrize(

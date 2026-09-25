@@ -109,8 +109,12 @@ def trace(trace_id: str):
 def data_quality() -> dict:
     """第一关的“数据质量”面板：清洗掉了多少行、各因为什么。"""
     current = service()
+    report = current.tools.cleaning_report()
+    removed = report.get("removed") or {}
     return {
-        "cleaning_report": current.tools.cleaning_report(),
+        "cleaning_report": report,
+        # note_unparseable_amount 是诊断标签，不是第七种剔除原因，不能重复计入。
+        "removed_total": sum(value for key, value in removed.items() if key[:1].isdigit()),
         "data_period": current.data_period,
         "kb_warnings": current.index.warnings,
     }
