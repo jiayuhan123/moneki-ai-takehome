@@ -50,7 +50,10 @@ class DataTools:
             self._local.conn = None
 
     def _where(self, start: str, end: str, store_id=None, product_id=None) -> tuple[str, list]:
-        clause = ["date >= ?", "date < ?"]
+        # 旧实现使用 ``date < end``，与 API 契约的闭区间相反；当 start == end
+        # 时甚至必然返回空集。clean.db 中日期已经统一为 ISO 文本，因此 ``<=``
+        # 可以安全、直观地包含结束日。
+        clause = ["date >= ?", "date <= ?"]
         params: list[Any] = [start, end]
         if store_id:
             clause.append("store_id = ?")
@@ -91,16 +94,24 @@ class DataTools:
     # -- 指标 -------------------------------------------------------------------
 
     def query_metrics(self, start: str, end: str, store_id=None, product_id=None) -> dict:
-        """营业额、退款、订单数、客单价、销量。客单价 = 营业额 ÷ 明细行数。"""
+        """按 KB-001 v3 计算净营业额、退款、订单数、客单价和销量。
+
+        旧 SQL 通过 ``is_refund = 0`` 排除了退款，并用 ``COUNT(*)`` 把一张
+        多商品订单算成多单。这里在同一条聚合 SQL 中明确表达五个口径，避免
+        各指标在不同查询里逐渐漂移。
+        """
         where, params = self._where(start, end, store_id, product_id)
-        # 退款行不是营业，直接排掉，省得把营业额算少了。
         row = self.conn.execute(
             """
             SELECT COALESCE(SUM(amount_cents), 0),
-                   0,
-                   COUNT(*),
-                   COALESCE(SUM(qty), 0)
-            FROM sales_clean WHERE %s AND is_refund = 0
+                   COALESCE(SUM(CASE WHEN amount_cents < 0 THEN amount_cents ELSE 0 END), 0),
+                   COUNT(DISTINCT CASE WHEN amount_cents > 0 THEN order_id END),
+                   COALESCE(SUM(CASE
+                       WHEN amount_cents > 0 THEN qty
+                       WHEN amount_cents < 0 THEN -qty
+                       ELSE 0
+                   END), 0)
+            FROM sales_clean WHERE %s
             """
             % where,
             params,
