@@ -85,6 +85,14 @@ class Service:
     def metrics_daily(self, start: str, end: str, store_id=None, product_id=None) -> dict:
         return self.tools.daily_metrics(start, end, store_id, product_id)
 
+    def stores(self) -> dict:
+        """返回维表中的真实门店，避免看板把当前五家店硬编码在浏览器里。"""
+
+        return {"stores": self.tools.stores()}
+
+    def top_products(self, start: str, end: str, store_id=None, limit: int = 10) -> dict:
+        return self.tools.top_products(start, end, store_id, limit)
+
     def retrieve(self, query: str, top_k: int = 5) -> dict:
         """契约 §4：片段够就恰好给 top_k 条，不够才少给。
 

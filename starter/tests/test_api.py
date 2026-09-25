@@ -40,6 +40,25 @@ def test_metrics_daily_ok(client):
     assert len(response.json()["days"]) == 5
 
 
+def test_stores_ok(client):
+    response = client.get("/api/stores")
+    assert response.status_code == 200
+    stores = response.json()["stores"]
+    assert len(stores) == 5
+    assert stores[0]["store_id"] == "S01"
+
+
+def test_top_products_ok(client):
+    response = client.get(
+        "/api/metrics/top-products",
+        params={"start": "2026-06-01", "end": "2026-06-30", "limit": 10},
+    )
+    assert response.status_code == 200
+    products = response.json()["products"]
+    assert len(products) == 10
+    assert products == sorted(products, key=lambda item: item["net_revenue"], reverse=True)
+
+
 def test_retrieve_ok(client):
     response = client.post("/api/retrieve", json={"query": "退款", "top_k": 5})
     assert response.status_code == 200

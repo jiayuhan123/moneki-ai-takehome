@@ -86,6 +86,26 @@ def metrics_daily(
     return bad or service().metrics_daily(start, end, store_id, product_id)
 
 
+@app.get("/api/stores")
+def stores() -> dict:
+    """第一关筛选器的数据源；门店变化后无需重新发布前端。"""
+
+    return service().stores()
+
+
+@app.get("/api/metrics/top-products")
+def top_products(
+    start: str = Query(...),
+    end: str = Query(...),
+    store_id: Optional[str] = None,
+    limit: int = Query(default=10, ge=1, le=100),
+):
+    """第一关 Top 商品表格使用的扩展接口，不改变强制 API 契约。"""
+
+    bad = _bad_date(start, end)
+    return bad or service().top_products(start, end, store_id, limit)
+
+
 @app.post("/api/retrieve")
 def retrieve(request: RetrieveRequest) -> dict:
     return service().retrieve(_as_text(request.query), request.top_k)
